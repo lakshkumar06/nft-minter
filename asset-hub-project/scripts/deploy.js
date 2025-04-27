@@ -72,7 +72,15 @@ const deployContract = async (contractName, mnemonic, constructorArgs = []) => {
 };
 
 // Replace with your mnemonic
-const mnemonic = 'battle nest immune equip beauty large push wise gift limit winter soccer';
+// const mnemonic = 'glass milk vicious dwarf famous achieve short crane book spider obtain hat';
+const mnemonic = 'battle nest immune equip beauty large push wise gift limit winter soccer'
 
-// Deploy NFTMinter with constructor arguments
-deployContract('NFTMinter', mnemonic, ['Westend NFT Collection', 'WNFT']); 
+// Get the contract name from command line arguments
+const contractName = process.argv[2];
+if (!contractName) {
+  console.error('Please provide a contract name');
+  process.exit(1);
+}
+
+// Deploy the contract
+deployContract(contractName, mnemonic); 

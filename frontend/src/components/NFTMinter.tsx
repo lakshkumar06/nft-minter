@@ -4,22 +4,29 @@ import { uploadToIPFS, uploadMetadataToIPFS } from '../utils/ipfs';
 import { MintingState, NFTMetadata } from '../types/nft';
 
 // Deployed contract address on Westend Asset Hub
-const NFT_MINTER_CONTRACT_ADDRESS = '0x638E86380f7104347A4c472Ec7A7Fd2817A0f925';
+const NFT_MINTER_CONTRACT_ADDRESS = '0x92fd6660B83F6a37A782A24385A9db5460c1D749';
 
 // Contract ABI for the NFTMinter contract
 const NFT_MINTER_ABI = [
-  "function mint(address to, string memory uri) public returns (uint256)",
-  "function creatorOf(uint256 tokenId) public view returns (address)",
-  "function name() public view returns (string memory)",
-  "function symbol() public view returns (string memory)",
-  "function totalSupply() public view returns (uint256)"
+  "function mintNFT(string memory tokenURI) public returns (uint256)",
+  "function getItemId() public view returns(uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
 ];
 
-export const NFTMinter = () => {
+interface NFTMinterProps {
+  onNFTCreated: (nft: { name: string; description: string; image: string }) => void;
+  account: string | null;
+  onConnectWallet: () => Promise<void>;
+}
+
+export const NFTMinter: React.FC<NFTMinterProps> = ({ onNFTCreated, account, onConnectWallet }) => {
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [account, setAccount] = useState<string>('');
   const [contract, setContract] = useState<ethers.Contract | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
@@ -34,21 +41,14 @@ export const NFTMinter = () => {
     const init = async () => {
       if (window.ethereum) {
         try {
-          // Use the global provider if available, otherwise create a new one
-          const westendProvider = (window as any).westendProvider || 
-            new ethers.BrowserProvider(window.ethereum, {
-              name: 'Polkadot Asset Hub (Westend)',
-              chainId: 420420421
-            });
+          const provider = new ethers.BrowserProvider(window.ethereum as any);
+          setProvider(provider);
           
-          setProvider(westendProvider);
-          
-          // Create contract instance
           const contractInstance = new ethers.Contract(
             NFT_MINTER_CONTRACT_ADDRESS,
             NFT_MINTER_ABI,
-            westendProvider
-          ) as ethers.Contract;
+            provider
+          );
           
           setContract(contractInstance);
         } catch (error) {
@@ -63,38 +63,6 @@ export const NFTMinter = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
-    }
-  };
-
-  const connectWallet = async () => {
-    try {
-      if (window.ethereum) {
-        // Request account access
-        const accounts = await window.ethereum.request({
-          method: 'eth_requestAccounts',
-        });
-        
-        setAccount(accounts[0]);
-        
-        // Get signer after connecting wallet
-        if (provider) {
-          const signer = await provider.getSigner();
-          setSigner(signer);
-          
-          // Update contract with signer
-          if (contract) {
-            const contractWithSigner = contract.connect(signer) as ethers.Contract;
-            setContract(contractWithSigner);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error connecting wallet:', error);
-      setMintingState({
-        isMinting: false,
-        error: 'Failed to connect wallet',
-        success: false,
-      });
     }
   };
 
@@ -121,7 +89,9 @@ export const NFTMinter = () => {
 
     try {
       // Upload image to IPFS
+      console.log('Uploading image to IPFS...');
       const imageUri = await uploadToIPFS(file);
+      console.log('Image uploaded to IPFS:', imageUri);
 
       // Create and upload metadata
       const metadata: NFTMetadata = {
@@ -129,21 +99,36 @@ export const NFTMinter = () => {
         description,
         image: imageUri,
       };
+      console.log('Uploading metadata to IPFS...');
       const metadataUri = await uploadMetadataToIPFS(metadata);
+      console.log('Metadata uploaded to IPFS:', metadataUri);
 
       // Mint NFT
-      const tx = await contract.mint(account, metadataUri);
+      console.log('Minting NFT with metadata URI:', metadataUri);
+      const tx = await contract.mintNFT(metadataUri);
       console.log('Transaction sent:', tx.hash);
 
       // Wait for the transaction to be mined
       const receipt = await tx.wait();
       console.log('Transaction confirmed:', receipt);
 
+      // Pass the NFT data to parent component
+      onNFTCreated({
+        name,
+        description,
+        image: imageUri
+      });
+
       setMintingState({
         isMinting: false,
         error: null,
         success: true,
       });
+
+      // Clear form
+      setFile(null);
+      setName('');
+      setDescription('');
     } catch (error) {
       console.error('Error minting NFT:', error);
       setMintingState({
@@ -160,7 +145,7 @@ export const NFTMinter = () => {
       
       {!account ? (
         <button 
-          onClick={connectWallet}
+          onClick={onConnectWallet}
           style={{
             padding: '10px 20px',
             backgroundColor: '#4CAF50',
